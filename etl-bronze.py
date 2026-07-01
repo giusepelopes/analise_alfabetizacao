@@ -10,7 +10,7 @@ from pyspark.sql import functions as F
 drive.mount('/content/drive')
 
 # Configurando LOGS para serem registrados durante a execução do job.
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%SZ")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%SZ", force=True)
 log = logging.getLogger(__name__)
 
 # Configurando Spark Session
@@ -37,7 +37,7 @@ def ingerir_dados(path):
       log.info(f"[INGESTAO] {df_raw.count()} registros ingeridos.")
       return df_raw
   except Exception as e:
-      print(f"[INGESTAO] Falha ao ingerir arquivos em {path}: {str(e)}")
+      log.info(f"[INGESTAO] Falha ao ingerir arquivos em {path}: {str(e)}")
       raise
 
 def construir_bronze(df_raw, entity):
@@ -53,11 +53,17 @@ def construir_bronze(df_raw, entity):
       .withColumn("_source_file", F.input_file_name()) \
       .withColumn("_source_entity", F.lit(entity)) \
       .withColumn("_record_hash", F.sha2(F.concat_ws("||", *original_columns), 256)) \
-      .withColumn("ing_ano", F.lit(ano)) \
-      .withColumn("ing_mes", F.lit(mes)) \
-      .withColumn("ing_dia", F.lit(dia))
+      .withColumn("_ing_ano", F.lit(ano)) \
+      .withColumn("_ing_mes", F.lit(mes)) \
+      .withColumn("_ing_dia", F.lit(dia))
 
   return df_bronze
+
+def salvar_camada_bronze(df_bronze, path_output):
+  log.info(f"[BRONZE] Salvando em: {path_output}")
+  df_bronze.write.format("parquet").mode("overwrite").partitionBy("_ing_ano", "_ing_mes", "_ing_dia").save(path_output)
+  log.info(f"[BRONZE] {df_bronze.count()} registros salvos")
+  return path_output
 
 # Mapeamento de entidades, seguindo o formato (Pasta de Origem -> Pasta de Destino).
 entidades = {
@@ -79,9 +85,8 @@ for origem, destino in entidades.items():
     try:
         df_raw = ingerir_dados(path_input)
         df_bronze = construir_bronze(df_raw, origem)
-        df_bronze.show(5, truncate=False)
-
+        bronze_path = salvar_camada_bronze(df_bronze, path_output)
     except Exception as e:
-        print(f"Erro ao processar {destino}: {str(e)}")
+        log.info(f"[PROC:BRONZE] Erro ao processar {destino}: {str(e)}")
 
-print("\n Pipeline de Ingestão da Camada Bronze Finalizado!")
+log.info("[PROC:BRONZE] Pipeline de Ingestão da Camada Bronze Finalizado!")
