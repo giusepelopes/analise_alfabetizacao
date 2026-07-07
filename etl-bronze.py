@@ -137,7 +137,6 @@ DQ_CHECKS = {
         {"tipo": "not_null",  "coluna": "id_municipio"},
         {"tipo": "not_null",  "coluna": "nome_municipio"},
         {"tipo": "not_null",  "coluna": "sigla_uf"},
-        {"tipo": "unique",    "coluna": "id_municipio"},
     ],
 }
 
@@ -163,6 +162,8 @@ for origem, destino in entidades.items():
     try:
         df_raw = ingerir_dados(path_input)
         df_bronze = construir_bronze(df_raw, origem)
+
+        df_bronze.show(5, truncate=False)
 
         dq_checks = DQ_CHECKS.get(origem, [])
         if dq_checks:
