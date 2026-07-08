@@ -23,9 +23,40 @@ ano, mes, dia  = INGESTION_DATE.split("-")
 BASE_BRONZE = "/content/drive/MyDrive/projeto-medalhao/bronze/"
 BASE_SILVER = "/content/drive/MyDrive/projeto-medalhao/silver/"
 
+# Definicao de chaves primarias de cada entidade, para verificacao de duplicidade.
+P_KEYS = {
+    "avaliacao_aluno": ["ano", "id_aluno"],
+    "meta_brasil": ["ano"],
+    "meta_municipio": ["ano", "id_municipio"],
+    "meta_uf": ["ano", "sigla_uf"],
+    "municipio": ["ano", "id_municipio", "rede"],
+    "uf": ["ano", "sigla_uf", "rede"],
+    "mapeamento_municipio": ["id_municipio"]
+}
+
+def tratamento_duplicidade(df, entidade):
+  log.info(f"[SILVER] Verificando duplicidade: {entidade.upper()}")
+
+  chaves = P_KEYS[entidade]
+
+  total_linhas = df.count()
+  linhas_unicas = df.select(chaves).distinct().count()
+
+  if total_linhas == linhas_unicas:
+      log.info(f"[SILVER] {entidade.upper()}: OK (Nenhuma duplicidade encontrada nas chaves {chaves}). Total: {total_linhas} linhas.")
+  else:
+      duplicados = total_linhas - linhas_unicas
+      log.info(f"[SILVER] {entidade.upper()}: ATENÇÃO! Encontradas {duplicados} linhas duplicadas com base nas chaves {chaves}.")
+      # Remove duplicados mantendo o primeiro registro encontrado para aquela chave
+      df = df.dropDuplicates(chaves)
+      log.info(f"[SILVER] Deduplicacao: {total_linhas - df.count()} removidos (chave={chaves})")
+
+  return df
+
 # Renomeação de colunas, preenchimento de valores nulos e casting para tipos esperados.
 def transformar_aluno(df):
   log.info("[SILVER] Aplicando regras: AVALIACAO_ALUNO")
+
   return (df
           .withColumnRenamed("presenca", "compareceu")
           .withColumnRenamed("preenchimento_caderno", "preencheu_caderno")
@@ -36,12 +67,25 @@ def transformar_aluno(df):
           .withColumn("id_aluno", F.col("id_aluno").cast(IntegerType()))
           .withColumn("caderno", F.col("caderno").cast(IntegerType()))
           .withColumn("serie", F.col("serie").cast(IntegerType()))
-          .withColumn("rede", F.col("rede").cast(IntegerType()))
+          .withColumn("rede",   F.when(F.col("rede") == 1, "Federal")
+                                .when(F.col("rede") == 2, "Estadual")
+                                .when(F.col("rede") == 3, "Municipal")
+                                .otherwise("Privada"))
           .withColumn("compareceu", F.col("compareceu").cast(BooleanType()))
           .withColumn("preencheu_caderno", F.col("preencheu_caderno").cast(BooleanType()))
           .withColumn("alfabetizado", F.col("alfabetizado").cast(BooleanType()))
           .withColumn("proficiencia", F.col("proficiencia").cast(DoubleType()))
           .withColumn("peso_aluno", F.col("peso_aluno").cast(DoubleType()))
+          .withColumn("nivel_alfabetizacao", F
+                     .when(F.col("proficiencia") < 650, 0)
+                     .when(F.col("proficiencia") < 675, 1)
+                     .when(F.col("proficiencia") < 700, 2)
+                     .when(F.col("proficiencia") < 725, 3)
+                     .when(F.col("proficiencia") < 750, 4)
+                     .when(F.col("proficiencia") < 775, 5)
+                     .when(F.col("proficiencia") < 800, 6)
+                     .when(F.col("proficiencia") < 825, 7)
+                     .otherwise(8))
           )
 
 def transformar_meta(df, entidade):
@@ -104,6 +148,13 @@ def transformar_regional(df, entidade):
          .withColumn("rede", F.initcap(F.trim(F.col("rede"))))
          .withColumn("taxa_alfabetizacao", F.col("taxa_alfabetizacao").cast(DoubleType()))
          .withColumn("media_portugues", F.col("media_portugues").cast(DoubleType()))
+         .withColumn("rede",   F.when(F.col("rede") == 0, "Total")
+                                .when(F.col("rede") == 1, "Federal")
+                                .when(F.col("rede") == 2, "Estadual")
+                                .when(F.col("rede") == 3, "Municipal")
+                                .when(F.col("rede") == 4, "Privada")
+                                .when(F.col("rede") == 5, "Publica (E,M)")
+                                .otherwise("Publica (F,E,M)"))
          )
 
   if entidade == "municipio":
@@ -132,12 +183,12 @@ entidades = {
     "mapeamento_municipio": "mapeamento_municipio"
 }
 
-# Loop de processamento dos arquivos raw.
+# Loop de processamento dos arquivos bronze.
 for origem, destino in entidades.items():
     log.info("=" * 60)
     log.info(f"[PROC:SILVER] Processando Entidade: {origem.upper()}")
 
-    path_input = f"{BASE_BRONZE}{origem}/_ing_ano=2026/_ing_mes={mes}/"
+    path_input = f"{BASE_BRONZE}{origem}/_ing_ano={ano}/_ing_mes={mes}/"
     path_output = f"{BASE_SILVER}{destino}/"
 
     try:
@@ -152,6 +203,7 @@ for origem, destino in entidades.items():
           df_bronze = transformar_regional(df_bronze, origem)
         elif origem == "mapeamento_municipio":
           df_bronze = transformar_mapeamento_m(df_bronze)
+        df_bronze = tratamento_duplicidade(df_bronze, origem)
         df_bronze.show(5, truncate=False)
     except Exception as e:
             log.info(f"[PROC:SILVER] Erro ao processar {origem}: {str(e)}")
