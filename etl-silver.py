@@ -190,6 +190,7 @@ def transformar_df_bronze(entidade):
       tratamento_duplicidade(df_bronze, entidade)
   except Exception as e:
           log.info(f"[PROC:SILVER] Erro ao processar {entidade}: {str(e)}")
+          raise e
 
   return df_bronze
 
@@ -209,6 +210,7 @@ def constroi_fato_aluno(dataframes):
                                 "preencheu_caderno",
                                 "alfabetizado",
                                 "nivel_alfabetizacao",
+                                "id_escola",
                                 "nome_municipio",
                                 "sigla_uf",
                                 dataframes["municipio"].media_portugues.alias("media_portugues_municipio"),
@@ -299,10 +301,10 @@ def salvar_camada_silver(df, path_output):
   log.info(f"[SILVER] {df.count()} registros salvos.")
   return path_output
 
-def checar_qualidade_silver(df, fact_table):
-  dq_checks = DQ_CHECKS[fact_table]
+def checar_qualidade_silver(fact_table, fact_table_name):
+  dq_checks = DQ_CHECKS[fact_table_name]
   log.info("=" * 60)
-  log.info(f"[DQ:SILVER] Iniciando verificacoes {fact_table.upper()} | checks = {len(dq_checks)}")
+  log.info(f"[DQ:SILVER] Iniciando verificacoes {fact_table_name.upper()} | checks = {len(dq_checks)}")
 
   for check in dq_checks:
     tipo    = check["tipo"]
@@ -313,20 +315,20 @@ def checar_qualidade_silver(df, fact_table):
 
     try:
       if tipo == "not_null":
-          nulos   = df.filter(F.col(coluna).isNull()).count()
+          nulos   = fact_table.filter(F.col(coluna).isNull()).count()
           ok      = (nulos == 0)
           mensagem_log = f"{nulos} nulos encontrados"
       elif tipo == "min_count":
-          contagem = df.count()
+          contagem = fact_table.count()
           ok       = (contagem >= valor)
           mensagem_log  = f"contagem = {contagem} | minimo = {valor}"
       elif tipo == "unique":
-          dups    = df.count() - df.select(coluna).distinct().count()
+          dups    = fact_table.count() - fact_table.select(coluna).distinct().count()
           ok      = (dups == 0)
           mensagem_log = f"{dups} duplicatas encontradas"
       elif tipo == "range":
           mn, mx = valor
-          fora   = df.filter((F.col(coluna) < mn) | (F.col(coluna) > mx)).count()
+          fora   = fact_table.filter((F.col(coluna) < mn) | (F.col(coluna) > mx)).count()
           ok      = (fora == 0)
           mensagem_log = f"{fora} fora do intervalo [{mn},{mx}]"
     except Exception as e:
@@ -344,6 +346,7 @@ DQ_CHECKS = {
         {"tipo": "min_count", "valor": 1},
         {"tipo": "not_null",  "coluna": "id_aluno"},
         {"tipo": "not_null",  "coluna": "ano"},
+        {"tipo": "not_null",  "coluna": "id_escola"},
         {"tipo": "range",     "coluna": "proficiencia", "valor": (0, 1000)},
         {"tipo": "range",     "coluna": "nivel_alfabetizacao", "valor": (0, 8)},
         {"tipo": "range",     "coluna": "media_portugues_municipio", "valor": (0, 1000)},
@@ -403,6 +406,11 @@ facts = {
     "fct_meta_uf": None
 }
 
+log.info("=" * 60)
+log.info("INICIANDO PROCESSAMENTO SILVER")
+log.info(f"  Lendo de  : {BASE_BRONZE}")
+log.info(f"  Destino  : {BASE_SILVER}")
+
 try:
   # Loop de processamento e transformação dos arquivos bronze.
   for entidade in dataframes.keys():
@@ -417,11 +425,16 @@ try:
   for fact_name, fact_table in facts.items():
     path_output = f"{BASE_SILVER}{fact_name}/"
     checar_qualidade_silver(fact_table, fact_name)
-    fact_table.show(10, truncate = False)
     silver_path = salvar_camada_silver(fact_table, path_output)
+
+    log.info("=" * 60)
+    log.info("SUMARIO SILVER")
+    log.info(f"  Lido de  : {BASE_BRONZE}")
+    log.info(f"  Destino  : {silver_path}_proc_ano={ano}/_proc_mes={mes}/")
+    log.info(f"  Pipeline completo para entidade: {fact_name.upper()}")
 
 except Exception as e:
   log.info(f"[PROC:SILVER] Erro ao processar a camada SILVER: {str(e)}")
 
 log.info("=" * 60)
-log.info("[PROC:SILVER] Pipeline de Processamento da Camada Silver Finalizado!")
+log.info("[PROC:SILVER] Processamento da Camada Silver Finalizado!")

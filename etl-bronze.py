@@ -66,7 +66,6 @@ def salvar_camada_bronze(df_bronze, path_output):
 
 def checar_qualidade_bronze(df_bronze, dq_checks):
   log.info(f"[DQ:BRONZE] Iniciando verificacoes | checks = {len(dq_checks)}")
-  criticos = 0
 
   for check in dq_checks:
     tipo    = check["tipo"]
@@ -151,6 +150,11 @@ entidades = {
     "mapeamento_municipio": "mapeamento_municipio"
 }
 
+log.info("=" * 60)
+log.info("INICIANDO PROCESSAMENTO BRONZE")
+log.info(f"  Lendo de  : {BASE_LANDING}")
+log.info(f"  Destino  : {BASE_BRONZE}")
+
 # Loop de processamento dos arquivos raw.
 for origem, destino in entidades.items():
     log.info("=" * 60)
@@ -163,8 +167,6 @@ for origem, destino in entidades.items():
         df_raw = ingerir_dados(path_input)
         df_bronze = construir_bronze(df_raw, origem)
 
-        df_bronze.show(5, truncate=False)
-
         dq_checks = DQ_CHECKS.get(origem, [])
         if dq_checks:
           checar_qualidade_bronze(df_bronze, dq_checks)
@@ -172,8 +174,15 @@ for origem, destino in entidades.items():
           log.warning(f"[DQ:BRONZE] Nenhuma regra definida para '{origem}' — pulando verificacao")
 
         bronze_path = salvar_camada_bronze(df_bronze, path_output)
+
+        log.info("=" * 60)
+        log.info("SUMARIO BRONZE")
+        log.info(f"  Lido de  : {BASE_LANDING}")
+        log.info(f"  Destino  : {bronze_path}_ing_ano={ano}/_ing_mes={mes}/")
+        log.info(f"  Pipeline completo para entidade: {origem.upper()}")
+
     except Exception as e:
         log.info(f"[PROC:BRONZE] Erro ao processar {origem}: {str(e)}")
 
 log.info("=" * 60)
-log.info("[PROC:BRONZE] Pipeline de Ingestão da Camada Bronze Finalizado!")
+log.info("[PROC:BRONZE] Ingestão da Camada Bronze Finalizado!")
