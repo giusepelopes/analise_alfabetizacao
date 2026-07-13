@@ -2,26 +2,37 @@ import sys
 import logging
 from datetime import datetime, timezone
 
-from google.colab import drive
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import IntegerType, DoubleType, BooleanType
 
-drive.mount('/content/drive')
+from awsglue.utils import getResolvedOptions
+from awsglue.context import GlueContext
+from awsglue.job import Job
 
 # Configurando LOGS para serem registrados durante a execução do job.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%SZ", force=True)
 log = logging.getLogger(__name__)
 
-# Configurando Spark Session
-spark = SparkSession.builder.appName("Pipeline-Silver").getOrCreate()
+# Captura os argumentos passados pelo Glue (ex: o nome do Job)
+args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+
+# Inicializando o contexto do Spark e do Glue
+spark_context = SparkSession.builder.getOrCreate().sparkContext
+glue_context = GlueContext(spark_context)
+spark = glue_context.spark_session
+
+# Inicializa o ciclo de vida do Job no Glue
+job = Job(glue_context)
+job.init(args['JOB_NAME'], args)
 
 # Variáveis
 INGESTION_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 ano, mes, dia  = INGESTION_DATE.split("-")
 
-BASE_BRONZE = "/content/drive/MyDrive/projeto-medalhao/bronze/"
-BASE_SILVER = "/content/drive/MyDrive/projeto-medalhao/silver/"
+#### Atualizar "YOUR_S3_PATH" com o caminho do bucket S3 que será utilizado para armazenamento
+BASE_BRONZE = "YOUR_S3_PATH/bronze/"
+BASE_SILVER = "YOUR_S3_PATH/silver/"
 
 # Definicao de chaves primarias de cada entidade, para verificacao de duplicidade.
 P_KEYS = {
@@ -438,3 +449,5 @@ except Exception as e:
 
 log.info("=" * 60)
 log.info("[PROC:SILVER] Processamento da Camada Silver Finalizado!")
+
+job.commit()
