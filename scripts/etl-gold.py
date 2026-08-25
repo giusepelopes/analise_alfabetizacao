@@ -66,7 +66,7 @@ def gold_consolidado_municipio(fact_tables):
               F.round(F.avg("taxa_alfabetizacao_estadual"), 2).alias("taxa_alfabetizacao_referencia_estado")
           )
           .withColumn("atingiu_meta",
-                      F.when(F.col("taxa_alfabetizacao_real") >= F.col("meta_alfabetizacao_esperada"), True)
+                      F.when((F.col("meta_alfabetizacao_esperada") > 0) & (F.col("taxa_alfabetizacao_real") >= F.col("meta_alfabetizacao_esperada")), True)
                       .otherwise(False)
                       )
           .withColumn("diff_meta", F.col("taxa_alfabetizacao_real") - F.col("meta_alfabetizacao_esperada"))
@@ -99,7 +99,7 @@ def gold_consolidado_uf(fact_tables):
               F.round(F.avg("taxa_alfabetizacao_nacional"), 2).alias("taxa_alfabetizacao_referencia_brasil")
           )
           .withColumn("uf_atingiu_meta",
-              F.when(F.col("taxa_alfabetizacao_real_uf") >= F.col("meta_alfabetizacao_esperada_uf"), True)
+              F.when((F.col("meta_alfabetizacao_esperada_uf") > 0) & (F.col("taxa_alfabetizacao_real_uf") >= F.col("meta_alfabetizacao_esperada_uf")), True)
               .otherwise(False)
           )
           .withColumn("diff_meta", F.col("taxa_alfabetizacao_real_uf") - F.col("meta_alfabetizacao_esperada_uf"))
@@ -332,6 +332,7 @@ try:
   for nome_tabela, tabela in tabelas_gold.items():
     path_output = f"{BASE_GOLD}{nome_tabela}/"
     checar_qualiade_gold(tabela, nome_tabela)
+
     gold_path = salvar_camada_gold(tabela, path_output)
 
     log.info("=" * 60)
@@ -342,9 +343,9 @@ try:
 
 except Exception as e:
     log.error(f"[PROC:GOLD] Erro ao processar a camada GOLD: {str(e)}")
+    raise e
 
 log.info("=" * 60)
 log.info("[PROC:GOLD] Processamento da Camada Gold Finalizado!")
 
 job.commit()
-

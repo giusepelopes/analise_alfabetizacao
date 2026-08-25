@@ -51,7 +51,7 @@ def ingerir_dados(path):
       return df_raw
   except Exception as e:
       log.info(f"[INGESTAO] Falha ao ingerir arquivos em {path}: {str(e)}")
-      raise
+      raise e
 
 def construir_bronze(df_raw, entity):
   log.info(f"[BRONZE] Adicionando metadados.")
@@ -200,6 +200,7 @@ for origem, destino in entidades.items():
 
     except Exception as e:
         log.info(f"[PROC:BRONZE] Erro ao processar {origem}: {str(e)}")
+        raise e
 
 log.info("=" * 60)
 log.info("[PROC:BRONZE] Ingestão da Camada Bronze Finalizado!")

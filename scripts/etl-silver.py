@@ -73,7 +73,6 @@ def transformar_aluno(df):
   return (df
           .withColumnRenamed("presenca", "compareceu")
           .withColumnRenamed("preenchimento_caderno", "preencheu_caderno")
-          .fillna(0, subset=["proficiencia", "peso_aluno"])
           .withColumn("ano", F.col("ano").cast(IntegerType()))
           .withColumn("id_municipio", F.col("id_municipio").cast(IntegerType()))
           .withColumn("id_escola", F.col("id_escola").cast(IntegerType()))
@@ -90,6 +89,7 @@ def transformar_aluno(df):
           .withColumn("proficiencia", F.round(F.col("proficiencia").cast(DoubleType()), 2))
           .withColumn("peso_aluno", F.round(F.col("peso_aluno").cast(DoubleType()), 2))
           .withColumn("nivel_alfabetizacao", F
+                     .when(F.isnull(F.col("proficiencia")), 0)
                      .when(F.col("proficiencia") < 650, 0)
                      .when(F.col("proficiencia") < 675, 1)
                      .when(F.col("proficiencia") < 700, 2)
@@ -231,7 +231,6 @@ def constroi_fato_aluno(dataframes):
                                 dataframes["uf"].media_portugues.alias("media_portugues_estado")
                                 ) \
                         .fillna("Não encontrado", subset=["nome_municipio", "sigla_uf"]) \
-                        .fillna(0.0, subset=["media_portugues_municipio", "media_portugues_estado"])
 
   return fct_avaliacao_aluno \
           .withColumn("_silver_processed_at", F.lit(datetime.now(timezone.utc).isoformat())) \
@@ -442,6 +441,7 @@ try:
   for fact_name, fact_table in facts.items():
     path_output = f"{BASE_SILVER}{fact_name}/"
     checar_qualidade_silver(fact_table, fact_name)
+
     silver_path = salvar_camada_silver(fact_table, path_output)
 
     log.info("=" * 60)
@@ -452,6 +452,7 @@ try:
 
 except Exception as e:
   log.info(f"[PROC:SILVER] Erro ao processar a camada SILVER: {str(e)}")
+  raise e
 
 log.info("=" * 60)
 log.info("[PROC:SILVER] Processamento da Camada Silver Finalizado!")
